@@ -26,6 +26,7 @@ export {
   type DensityFrameStats,
 } from "./density-scatter-chart";
 export {
+  DENSITY_MAX_CATEGORY_CLASSES,
   DENSITY_OUTSIDE_ID,
   DENSITY_ROWS_WARN_AT,
   DENSITY_SHAPES,

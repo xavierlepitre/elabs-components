@@ -15,7 +15,7 @@
  * class token (dense); density is LIGHTNESS on one hue, never a second hue.
  */
 
-import type { DensityPlotBox, DensityView } from "./types";
+import { DENSITY_MAX_CLASSES, type DensityPlotBox, type DensityView } from "./types";
 
 export type Rgb = readonly [number, number, number];
 
@@ -71,7 +71,14 @@ export interface PointsRenderer {
   dispose(): void;
 }
 
-const MAX_CLASSES = 16;
+/**
+ * Class slots the GPU path compiles for: one per `DENSITY_MAX_CLASSES`, fewer
+ * when the device has too few vertex uniform vectors for them (each slot takes
+ * two — the ramp's ends, the visibility riding in the dense end's alpha).
+ */
+const MAX_CLASSES = DENSITY_MAX_CLASSES;
+/** Vertex uniform vectors the shader needs besides the class slots. */
+const UNIFORM_VECTORS_RESERVED = 16;
 
 /**
  * Sprite extent beyond the dot radius when glyphs other than the circle are
@@ -80,7 +87,7 @@ const MAX_CLASSES = 16;
  */
 const SHAPE_EXTENT = 1.35;
 
-const VERTEX_SHADER = `
+const vertexShader = (slots: number) => `
 precision mediump float;
 attribute vec2 aPos;
 attribute float aCls;
@@ -95,9 +102,8 @@ uniform vec2 uSize;
 uniform float uR;
 uniform float uRMax;
 uniform float uDpr;
-uniform vec3 uLo[${MAX_CLASSES}];
-uniform vec3 uHi[${MAX_CLASSES}];
-uniform float uVis[${MAX_CLASSES}];
+uniform vec4 uLo[${slots}];
+uniform vec4 uHi[${slots}];
 uniform float uAlpha;
 uniform float uHasSel;
 uniform float uTMin;
@@ -106,8 +112,8 @@ varying float vR;
 varying float vShp;
 varying float vSprite;
 void main() {
-  int k = int(aCls + 0.5);
-  if (uVis[k] < 0.5) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); gl_PointSize = 0.0; return; }
+  int k = int(min(aCls, ${slots - 1}.0) + 0.5);
+  if (uHi[k].a < 0.5) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); gl_PointSize = 0.0; return; }
   float sx = uBox.x + (aPos.x - uView.x) / (uView.z - uView.x) * uBox.z;
   float sy = uBox.y + (uView.w - aPos.y) / (uView.w - uView.y) * uBox.w;
   gl_Position = vec4(sx / uSize.x * 2.0 - 1.0, 1.0 - sy / uSize.y * 2.0, 0.0, 1.0);
@@ -118,7 +124,7 @@ void main() {
   vSprite = r * 2.0 * (uShapes > 0.5 ? ${SHAPE_EXTENT} : 1.0) + 2.0;
   gl_PointSize = vSprite * uDpr;
   float t = uTMin + (1.0 - uTMin) * aLvl;
-  vec3 c = mix(uLo[k], uHi[k], t);
+  vec3 c = mix(uLo[k].rgb, uHi[k].rgb, t);
   float a = uAlpha;
   if (uHasSel > 0.5 && aSel < 0.5) { c = mix(c, vec3(0.62), 0.55); a *= 0.16; }
   vColor = vec4(c, a);
@@ -278,12 +284,19 @@ class WebGLPoints implements PointsRenderer {
   private readonly buffers: Record<"pos" | "cls" | "lvl" | "sel" | "sz" | "shp", WebGLBuffer>;
   private count = 0;
   private hasShapes = false;
-  private readonly lo = new Float32Array(MAX_CLASSES * 3);
-  private readonly hi = new Float32Array(MAX_CLASSES * 3);
-  private readonly vis = new Float32Array(MAX_CLASSES);
+  private readonly slots: number;
+  private readonly lo: Float32Array;
+  private readonly hi: Float32Array;
 
   constructor(gl: WebGLRenderingContext) {
     this.gl = gl;
+    const vectors = Number(gl.getParameter(gl.MAX_VERTEX_UNIFORM_VECTORS)) || 128;
+    this.slots = Math.max(
+      16,
+      Math.min(MAX_CLASSES, Math.floor((vectors - UNIFORM_VECTORS_RESERVED) / 2)),
+    );
+    this.lo = new Float32Array(this.slots * 4);
+    this.hi = new Float32Array(this.slots * 4);
     const compile = (type: number, src: string) => {
       const shader = gl.createShader(type);
       if (!shader) throw new Error("DensityScatterChart: could not create a shader");
@@ -296,7 +309,7 @@ class WebGLPoints implements PointsRenderer {
     };
     const program = gl.createProgram();
     if (!program) throw new Error("DensityScatterChart: could not create a program");
-    gl.attachShader(program, compile(gl.VERTEX_SHADER, VERTEX_SHADER));
+    gl.attachShader(program, compile(gl.VERTEX_SHADER, vertexShader(this.slots)));
     gl.attachShader(program, compile(gl.FRAGMENT_SHADER, FRAGMENT_SHADER));
     gl.linkProgram(program);
     if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
@@ -327,7 +340,6 @@ class WebGLPoints implements PointsRenderer {
     this.uniforms = Object.fromEntries(names.map((n) => [n, gl.getUniformLocation(program, n)]));
     this.uniforms.uLo = gl.getUniformLocation(program, "uLo");
     this.uniforms.uHi = gl.getUniformLocation(program, "uHi");
-    this.uniforms.uVis = gl.getUniformLocation(program, "uVis");
     const buffer = () => {
       const b = gl.createBuffer();
       if (!b) throw new Error("DensityScatterChart: could not create a buffer");
@@ -417,19 +429,18 @@ class WebGLPoints implements PointsRenderer {
     gl.uniform1f(u.uHasSel!, p.hasSelection ? 1 : 0);
     gl.uniform1f(u.uTMin!, p.tMin);
     gl.uniform1f(u.uShapes!, this.hasShapes ? 1 : 0);
-    for (let k = 0; k < MAX_CLASSES; k++) {
+    for (let k = 0; k < this.slots; k++) {
       const ramp = p.ramps[Math.min(k, p.ramps.length - 1)] ?? { lo: [0, 0, 0], hi: [0, 0, 0] };
-      this.lo[k * 3] = ramp.lo[0] / 255;
-      this.lo[k * 3 + 1] = ramp.lo[1] / 255;
-      this.lo[k * 3 + 2] = ramp.lo[2] / 255;
-      this.hi[k * 3] = ramp.hi[0] / 255;
-      this.hi[k * 3 + 1] = ramp.hi[1] / 255;
-      this.hi[k * 3 + 2] = ramp.hi[2] / 255;
-      this.vis[k] = p.hidden[k] ? 0 : 1;
+      this.lo[k * 4] = ramp.lo[0] / 255;
+      this.lo[k * 4 + 1] = ramp.lo[1] / 255;
+      this.lo[k * 4 + 2] = ramp.lo[2] / 255;
+      this.hi[k * 4] = ramp.hi[0] / 255;
+      this.hi[k * 4 + 1] = ramp.hi[1] / 255;
+      this.hi[k * 4 + 2] = ramp.hi[2] / 255;
+      this.hi[k * 4 + 3] = p.hidden[k] ? 0 : 1;
     }
-    gl.uniform3fv(u.uLo!, this.lo);
-    gl.uniform3fv(u.uHi!, this.hi);
-    gl.uniform1fv(u.uVis!, this.vis);
+    gl.uniform4fv(u.uLo!, this.lo);
+    gl.uniform4fv(u.uHi!, this.hi);
     gl.bindBuffer(gl.ARRAY_BUFFER, b.pos);
     gl.enableVertexAttribArray(a.pos);
     gl.vertexAttribPointer(a.pos, 2, gl.FLOAT, false, 0, 0);

@@ -127,6 +127,7 @@ import {
 } from "./points-renderer";
 import { countSelected, resolveSelection, toggleZoneConstraint, withConstraint } from "./selection";
 import {
+  DENSITY_MAX_CATEGORY_CLASSES,
   DENSITY_MAX_CLASSES,
   DENSITY_OUTSIDE_ID,
   type DensityAxisOptions,
@@ -474,7 +475,7 @@ const RANGE_EDGES = ["start", "end"] as const;
 /** DensityMinimap's default size. */
 const MINIMAP_W = 132;
 const MINIMAP_H = 88;
-const MAX_CATEGORY_CLASSES = 12;
+const DEFAULT_CATEGORY_CLASSES = 12;
 const EMPTY_KEYS: ReadonlySet<string> = new Set();
 
 /**
@@ -766,7 +767,14 @@ const DensityScatterChartBody = forwardRef<HTMLDivElement, ResolvedDensityScatte
       if (resolvedColorBy.kind === "category") {
         const cat = points.categories[resolvedColorBy.key];
         if (cat) {
-          const n = Math.min(cat.labels.length, MAX_CATEGORY_CLASSES);
+          const cap = Math.max(
+            1,
+            Math.min(
+              Math.floor(resolvedColorBy.maxClasses ?? DEFAULT_CATEGORY_CLASSES),
+              DENSITY_MAX_CATEGORY_CLASSES,
+            ),
+          );
+          const n = Math.min(cat.labels.length, cap);
           const cls = new Uint8Array(points.n);
           for (let i = 0; i < points.n; i++) cls[i] = Math.min(cat.codes[i]!, n);
           // Palette — RM-186: a caller's palette through `resolvePalette`; unset keeps

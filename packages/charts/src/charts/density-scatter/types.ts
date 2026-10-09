@@ -146,7 +146,10 @@ export type DensityColorBy =
   /** A continuous column on a sequential ramp; dense cells show the cell's mean. */
   | { kind: "value"; key: string; domain?: [number, number] }
   /**
-   * A categorical column (≤ 12 distinct values) on the series ramp.
+   * A categorical column on the series ramp: the first `maxClasses` distinct
+   * values (default 12, at most `DENSITY_MAX_CATEGORY_CLASSES`) are classes of
+   * their own, the rest share one "Other" class. Past the twelve series tokens a
+   * class needs its colour from `colors` (or `palette`), else the ramp repeats.
    *
    * `colors` pins values to colours: per value, any CSS colour (or a `var(--…)`
    * reference), used for that class instead of the ramp slot its first-seen
@@ -154,7 +157,12 @@ export type DensityColorBy =
    * It is what a host needs for colours that survive a data change — the colour
    * of a value then no longer depends on the order the values arrive in.
    */
-  | { kind: "category"; key: string; colors?: Readonly<Record<string, string>> };
+  | {
+      kind: "category";
+      key: string;
+      colors?: Readonly<Record<string, string>>;
+      maxClasses?: number;
+    };
 
 /**
  * The glyph a dot is drawn as. `"circle"` is the default everywhere; the rest
@@ -277,8 +285,15 @@ export interface DensityOverlayContext {
 /** The zone id used for "matches no zone". */
 export const DENSITY_OUTSIDE_ID = "__outside";
 
-/** Class index of "outside" when `zones` has `k` entries is `k`. */
-export const DENSITY_MAX_CLASSES = 16;
+/**
+ * Colour classes the dots can carry (zones + "outside", or category values +
+ * "Other" + fixed colours). Class index of "outside" when `zones` has `k`
+ * entries is `k`.
+ */
+export const DENSITY_MAX_CLASSES = 112;
+
+/** Most distinct values a category colouring can give a class of their own (`colorBy.maxClasses`). */
+export const DENSITY_MAX_CATEGORY_CLASSES = 100;
 
 /** Row-input size past which the converter warns once (dev only). */
 export const DENSITY_ROWS_WARN_AT = 50_000;

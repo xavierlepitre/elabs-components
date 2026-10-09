@@ -160,6 +160,47 @@ describe("DensityScatterChart", () => {
     );
   });
 
+  it("colorBy.maxClasses lifts the twelve-class cap, up to DENSITY_MAX_CATEGORY_CLASSES", () => {
+    const n = 300;
+    const x = new Float32Array(n);
+    const y = new Float32Array(n);
+    const tail: string[] = [];
+    for (let i = 0; i < n; i++) {
+      x[i] = i;
+      y[i] = i % 7;
+      tail.push(`v${String(i % 30).padStart(2, "0")}`);
+    }
+    const data = { x, y, categories: { tail } };
+    const { unmount } = render(
+      <DensityScatterChart
+        accessibleLabel="Tail"
+        colorBy={{ kind: "category", key: "tail" }}
+        data={data}
+        legend
+      />,
+    );
+    expect(screen.queryByRole("button", { name: /^v12/ })).toBeNull();
+    expect(screen.getByRole("button", { name: /^Other/ })).toBeInTheDocument();
+    unmount();
+    render(
+      <DensityScatterChart
+        accessibleLabel="Tail"
+        colorBy={{
+          kind: "category",
+          key: "tail",
+          maxClasses: 100,
+          colors: { v29: "rgb(1, 2, 3)" },
+        }}
+        data={data}
+        legend
+      />,
+    );
+    expect(
+      screen.getByRole("button", { name: /^v29/ }).querySelector("[style]")?.getAttribute("style"),
+    ).toMatch(/rgb\(1, 2, 3\)/);
+    expect(screen.queryByRole("button", { name: /^Other/ })).toBeNull();
+  });
+
   it("legend toggles hide a class; a modifier-click selects it", () => {
     const intents: ChartSelectionIntent[] = [];
     const hidden: ReadonlySet<string>[] = [];
