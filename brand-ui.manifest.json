@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-03T22:41:34.065Z",
+  "generatedAt": "2026-10-09T09:44:51.452Z",
   "name": "brand-ui",
   "themes": [
     "dark",
@@ -15487,6 +15487,11 @@
           "name": "DEFAULT_Y_DOMAIN_TWEEN_MS",
           "kind": "value",
           "module": "packages/charts/src/charts/chart-phase.ts"
+        },
+        {
+          "name": "DENSITY_MAX_CATEGORY_CLASSES",
+          "kind": "value",
+          "module": "packages/charts/src/charts/density-scatter/types.ts"
         },
         {
           "name": "DENSITY_OUTSIDE_ID",
